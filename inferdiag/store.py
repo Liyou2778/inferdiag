@@ -63,10 +63,17 @@ class SQLiteStore:
         """把时间窗样本聚合成规则引擎指标字典。
 
         计数型指标(带 _total/_rate)按窗口首末差值算速率；量规型取窗口 max/mean。
+        若时间窗内样本不足，自动回退到"最近的样本"（监控有空窗期是常态，不应报 0）。
         样本不足 2 条时返回带 sample_count 的空指标（规则全部跳过）。
         """
         samples = self.window_samples(seconds)
-        out: dict = {"sample_count": len(samples)}
+        fallback = len(samples) < 2
+        if fallback:
+            rows = self._conn.execute(
+                "SELECT payload FROM samples ORDER BY ts DESC LIMIT 30"
+            ).fetchall()
+            samples = [Sample(**json.loads(r[0])) for r in reversed(rows)]
+        out: dict = {"sample_count": len(samples), "used_fallback_window": fallback}
         if len(samples) < 2:
             return out
 
