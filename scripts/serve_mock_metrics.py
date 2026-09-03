@@ -1,6 +1,7 @@
 """Mock /metrics 服务：无 GPU / 无真实引擎时开发用。
 
-模拟 vLLM 风格指标：数值随时间波动；stress 模式制造"高负载 + KV 打满"以便触发诊断规则。
+模拟 vLLM 风格指标：量规型数值随时间波动；计数型(counter)单调递增，
+stress 模式制造"高负载 + KV 打满 + 排队 + 抢占"，用于触发诊断规则 R1/R2/R3/R9/R12/R14。
 
 用法:
     python scripts/serve_mock_metrics.py --port 8001            # normal
@@ -14,58 +15,61 @@ import math
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
+# 计数型指标的状态：按时间累积，保证单调递增（规则引擎按差值算速率）
+_STATE = {"t": None, "prompt": 0.0, "gen": 0.0, "success": 0.0, "preempt": 0.0}
+
+
+def _advance_counters(mode: str, load: float) -> None:
+    now = time.time()
+    dt = 0.0 if _STATE["t"] is None else now - _STATE["t"]
+    _STATE["t"] = now
+    if dt <= 0 or dt > 30:  # 首次调用或异常间隔
+        return
+    stress = mode == "stress"
+    _STATE["prompt"] += (150_000 if stress else 20_000 + 80_000 * load) * dt
+    _STATE["gen"] += (700_000 if stress else 60_000 + 260_000 * load) * dt
+    _STATE["success"] += (30 if stress else 1 + 8 * load) * dt
+    _STATE["preempt"] += (5 if stress else 0.05 + 0.3 * load) * dt
+
 
 def _fmt(name: str, value: float, typ: str = "gauge", help_text: str = "") -> str:
-    lines = [f"# HELP {name} {help_text}", f"# TYPE {name} {typ}"]
-    lines.append(f"{name} {value:.6f}")
-    return "\n".join(lines)
+    return f"# HELP {name} {help_text}\n# TYPE {name} {typ}\n{name} {value:.6f}"
 
 
 def build_metrics(mode: str = "normal") -> str:
-    """生成 Prometheus 文本格式的模拟指标。"""
     t = time.time()
-    # 用时间函数模拟负载曲线：白天(8-22点)高，夜间低；叠加正弦波动
     hour = time.localtime(t).tm_hour
     day_factor = 1.0 if 8 <= hour <= 22 else 0.15
     wave = 0.5 + 0.5 * math.sin(t / 30.0)
-    load = day_factor * (0.5 + 0.5 * wave)
+    load = max(0.0, day_factor * (0.5 + 0.5 * wave))
+
+    _advance_counters(mode, load)
 
     if mode == "stress":
-        # 高负载 + KV 几乎打满 + 大排队 + 高 TTFT
-        running = 32
-        waiting = 40
-        kv = 0.97
-        preempt = 120 + load * 80
-        ttft_p50 = 1.8
-        ttft_p99 = 6.5
-        tpot = 0.09
-        e2e_p50 = 3.2
-        e2e_p99 = 12.0
+        running, waiting, kv = 32, 40, 0.97
+        preempt_show, ttft_p50, ttft_p99 = _STATE["preempt"], 1.8, 6.5
+        tpot, e2e_p50, e2e_p99 = 0.09, 3.2, 12.0
     else:
         running = round(2 + 20 * load)
         waiting = round(1 + 6 * load)
         kv = 0.25 + 0.5 * load
-        preempt = 2 + load * 10
+        preempt_show = _STATE["preempt"]
         ttft_p50 = 0.18 + load * 0.35
         ttft_p99 = 0.6 + load * 1.6
         tpot = 0.04
         e2e_p50 = 0.3 + load * 0.8
         e2e_p99 = 1.0 + load * 3.0
 
-    success = 1000 + load * 9000
-    prompt_tok = 1_000_000 + load * 8_000_000
-    gen_tok = 3_000_000 + load * 25_000_000
-
     parts = [
         _fmt("vllm:num_requests_running", float(running), "gauge", "running requests"),
         _fmt("vllm:num_requests_waiting", float(waiting), "gauge", "waiting requests"),
         _fmt("vllm:num_requests_swapped", load * 3, "gauge"),
-        _fmt("vllm:num_preemptions_total", preempt, "counter"),
-        _fmt("vllm:request_success_total", success, "counter"),
+        _fmt("vllm:num_preemptions_total", preempt_show, "counter"),
+        _fmt("vllm:request_success_total", _STATE["success"], "counter"),
         _fmt("vllm:gpu_cache_usage_perc", kv, "gauge", "fraction of KV cache used"),
         _fmt("vllm:cpu_cache_usage_perc", kv * 0.1, "gauge"),
-        _fmt("vllm:prompt_tokens_total", prompt_tok, "counter"),
-        _fmt("vllm:generation_tokens_total", gen_tok, "counter"),
+        _fmt("vllm:prompt_tokens_total", _STATE["prompt"], "counter"),
+        _fmt("vllm:generation_tokens_total", _STATE["gen"], "counter"),
         "# HELP vllm:time_to_first_token_seconds time to first token",
         "# TYPE vllm:time_to_first_token_seconds summary",
         f'vllm:time_to_first_token_seconds{{quantile="0.5"}} {ttft_p50:.4f}',
