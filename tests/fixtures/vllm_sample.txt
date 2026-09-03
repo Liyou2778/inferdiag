@@ -1,0 +1,22 @@
+# 样例：vLLM /metrics 片段（来自官方文档风格，用于解析测试）
+# HELP vllm:gpu_cache_usage_perc Fraction of GPU KV cache used.
+# TYPE vllm:gpu_cache_usage_perc gauge
+vllm:gpu_cache_usage_perc 0.64
+# HELP vllm:num_requests_running Number of requests currently running
+# TYPE vllm:num_requests_running gauge
+vllm:num_requests_running 8
+# HELP vllm:num_requests_waiting Number of requests waiting to be processed
+# TYPE vllm:num_requests_waiting gauge
+vllm:num_requests_waiting 3
+# HELP vllm:num_preemptions_total Cumulative number of preemptions
+# TYPE vllm:num_preemptions_total counter
+vllm:num_preemptions_total 17
+# HELP vllm:request_success_total Cumulative number of successful requests
+# TYPE vllm:request_success_total counter
+vllm:request_success_total 120
+# HELP vllm:time_to_first_token_seconds Time to first token in seconds
+# TYPE vllm:time_to_first_token_seconds summary
+vllm:time_to_first_token_seconds{quantile="0.5"} 0.35
+vllm:time_to_first_token_seconds{quantile="0.99"} 1.9
+vllm:time_to_first_token_seconds_count 1
+vllm:time_to_first_token_seconds_sum 1
