@@ -35,6 +35,9 @@ class Sample:
     kv_cache_usage_pct: float | None = None
     cpu_cache_usage_pct: float | None = None
     prefix_cache_hit_pct: float | None = None
+    # 前缀缓存计数（原始值，窗口聚合时算命中率）
+    prefix_cache_hits_total: float | None = None
+    prefix_cache_queries_total: float | None = None
     # GPU（来自 nvidia-smi/DCGM 时填充）
     gpu_util_pct: float | None = None
     gpu_mem_used_mib: float | None = None

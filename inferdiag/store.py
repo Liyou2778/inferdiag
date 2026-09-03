@@ -101,6 +101,11 @@ class SQLiteStore:
         out["requests_success_rate"] = rate_of("requests_success_total")
         out["prompt_tokens_rate"] = rate_of("prompt_tokens_total")
         out["generation_tokens_rate"] = rate_of("generation_tokens_total")
+        # 前缀缓存命中率 = 窗口内 hits/queries 增量之比
+        hits = rate_of("prefix_cache_hits_total")
+        queries = rate_of("prefix_cache_queries_total")
+        if hits is not None and queries and queries > 0:
+            out["prefix_cache_hit_pct"] = round(min(100.0, hits / queries * 100), 1)
         out["cost_per_mtok"] = None  # 由 cost 模块计算后填充
         return out
 

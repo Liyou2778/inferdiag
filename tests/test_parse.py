@@ -31,3 +31,29 @@ def test_normalize_empty_snapshot_tolerated():
     s = normalize({})
     assert s.kv_cache_usage_pct is None
     assert s.num_running is None
+
+
+def test_histogram_quantile_estimation():
+    """vLLM 0.8.5 的延迟指标是 histogram：应从 _bucket 估算出 p50/p99。"""
+    text = """# HELP vllm:time_to_first_token_seconds time to first token
+# TYPE vllm:time_to_first_token_seconds histogram
+vllm:time_to_first_token_seconds_bucket{le="0.05"} 0
+vllm:time_to_first_token_seconds_bucket{le="0.1"} 0
+vllm:time_to_first_token_seconds_bucket{le="0.25"} 2
+vllm:time_to_first_token_seconds_bucket{le="0.5"} 5
+vllm:time_to_first_token_seconds_bucket{le="1.0"} 7
+vllm:time_to_first_token_seconds_bucket{le="2.5"} 9
+vllm:time_to_first_token_seconds_bucket{le="5.0"} 10
+vllm:time_to_first_token_seconds_bucket{le="+Inf"} 10
+vllm:time_to_first_token_seconds_sum 3.2
+vllm:time_to_first_token_seconds_count 10
+# HELP vllm:num_preemptions_total preemptions
+# TYPE vllm:num_preemptions_total counter
+vllm:num_preemptions_total 3
+"""
+    snap = parse_prometheus_text(text)
+    s = normalize(snap)
+    # p50: 第5个(累计≥5)→ bucket le=0.5 → 500ms；p99: 累计≥9.9 → bucket le=5.0 → 5000ms
+    assert s.ttft_p50_ms == 500.0
+    assert s.ttft_p99_ms == 5000.0
+    assert s.preemptions_total == 3
