@@ -199,6 +199,12 @@ inferdiag/
 
 ---
 
+## 文档
+
+- [架构设计（目标/模块/差异定位）](docs/architecture.md)
+- [阈值校准记录（真实硬件基线）](docs/calibration.md)
+- [验收测试清单（10 项 UAT）](docs/acceptance-test.md)
+
 ## License
 
 Apache-2.0。与任何推理引擎厂商无隶属关系。
