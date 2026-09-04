@@ -29,11 +29,34 @@ SERIES_METRICS = [
 ]
 
 
-def create_app(db_path: str = "data/inferdiag.db") -> FastAPI:
+def create_app(
+    db_path: str = "data/inferdiag.db",
+    collect_url: str | None = None,
+    collect_interval: float = 3.0,
+    collect_engine: str = "auto",
+) -> FastAPI:
     app = FastAPI(title="inferdiag", docs_url="/api/docs", openapi_url="/api/openapi.json")
     app.state.store = SQLiteStore(db_path)
     app.state.db_path = db_path
+    app.state.collect_url = collect_url
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+
+    if collect_url:
+        import threading
+
+        from ..collector.scrape import scrape_sample
+
+        def _collector_loop() -> None:
+            """后台采集线程：让仪表盘自带实时监控能力（边采边显示）。"""
+            while True:
+                try:
+                    sample = scrape_sample(collect_url, engine=collect_engine)
+                    app.state.store.insert_sample(sample)
+                except Exception as exc:  # noqa: BLE001 引擎短暂不可用不应中断看板
+                    print(f"[collector] scrape failed: {exc}", flush=True)
+                time.sleep(max(0.5, collect_interval))
+
+        threading.Thread(target=_collector_loop, name="inferdiag-collector", daemon=True).start()
 
     @app.get("/", include_in_schema=False)
     def index() -> FileResponse:
@@ -52,6 +75,8 @@ def create_app(db_path: str = "data/inferdiag.db") -> FastAPI:
             "sample_count": report["sample_count"],
             "window_seconds": window,
             "generated_at": time.time(),
+            "rows": store.count(),
+            "collecting": app.state.collect_url is not None,
             "findings": report["findings"],
             "metrics": {k: v for k, v in metrics.items() if v is not None},
             "cost": report["cost"],
@@ -75,7 +100,13 @@ def create_app(db_path: str = "data/inferdiag.db") -> FastAPI:
     @app.get("/api/health")
     def health():
         store: SQLiteStore = app.state.store
-        return {"ok": True, "db": str(store.db_path), "rows": store.count()}
+        return {
+            "ok": True,
+            "db": str(store.db_path),
+            "rows": store.count(),
+            "collect_url": app.state.collect_url,
+            "collecting": app.state.collect_url is not None,
+        }
 
     @app.exception_handler(Exception)
     async def _unexpected(_request: Request, exc: Exception) -> JSONResponse:

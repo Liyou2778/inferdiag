@@ -121,14 +121,19 @@ def serve(
     db: str = typer.Option("data/inferdiag.db", "--db"),
     host: str = "127.0.0.1",
     port: int = 8080,
+    collect_url: str = typer.Option(
+        None, "--collect-url", "-m", help="推理引擎 /metrics 地址；提供后仪表盘自动实时采集"
+    ),
+    collect_interval: float = typer.Option(3.0, "--collect-interval", help="实时采集间隔(秒)"),
 ) -> None:
-    """启动 Web 仪表盘（读本地库，无需引擎在线）。"""
+    """启动 Web 仪表盘。传 -m 引擎 /metrics 地址即可边采边看（实时监控）。"""
     import uvicorn
 
     from .web.app import create_app
 
-    web_app = create_app(db)
-    print(f"inferdiag dashboard -> http://{host}:{port}  (db={db})")
+    web_app = create_app(db, collect_url=collect_url, collect_interval=collect_interval)
+    tag = f"，实时采集 {collect_url}" if collect_url else "（静态库模式）"
+    print(f"inferdiag dashboard -> http://{host}:{port}  (db={db}{tag})")
     uvicorn.run(web_app, host=host, port=port, log_level="info")
 
 

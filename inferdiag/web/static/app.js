@@ -1,4 +1,4 @@
-// inferdiag dashboard —— 无依赖原生 JS：轮询 overview + 画迷你曲线
+// inferdiag dashboard —— 无依赖原生 JS：实时轮询 + 多尺度曲线
 "use strict";
 
 const COLORS = ["#4aa3ff", "#f1c40f", "#e74c3c", "#2ecc71", "#e67e22", "#9b59b6"];
@@ -12,8 +12,10 @@ const METRIC_META = {
 };
 const LEVEL_CN = { critical: "严重", warning: "警告", info: "提示" };
 const SERIES_KEYS = ["kv_cache_usage_pct", "ttft_p50_ms", "e2e_p99_ms", "num_running"];
+const POLL_MS = 1000; // 轮询间隔：1 秒实时刷新
 
 let seriesCache = { t: [], series: {} };
+let lastUpdateAt = 0;
 
 async function getJSON(url) {
   const r = await fetch(url, { cache: "no-store" });
@@ -21,6 +23,9 @@ async function getJSON(url) {
   return r.json();
 }
 
+function esc(v) {
+  return v === null || v === undefined || v === "" ? "–" : v;
+}
 function fmt(v) {
   if (v === null || v === undefined) return "–";
   if (typeof v === "number") return Number.isInteger(v) ? String(v) : v.toFixed(2);
@@ -38,8 +43,8 @@ function renderFindings(findings) {
       const ev = Object.entries(f.evidence || {}).map(([k, v]) => k + "=" + fmt(v)).join("，");
       return `<div class="finding">
         <div><span class="badge ${f.level}">${LEVEL_CN[f.level] || f.level}</span>
-        <span class="name">${f.rule_id} ${f.name}</span></div>
-        <div class="sug">💡 ${f.suggestion}</div>
+        <span class="name">${f.rule_id} ${esc(f.name)}</span></div>
+        <div class="sug">💡 ${esc(f.suggestion)}</div>
         ${ev ? `<div class="ev">证据: ${ev}</div>` : ""}
       </div>`;
     })
@@ -65,50 +70,70 @@ function renderMetrics(snapshot) {
 
 function drawChart() {
   const canvas = document.getElementById("chart");
+  const legend = document.getElementById("legend");
   const dpr = window.devicePixelRatio || 1;
   const w = canvas.clientWidth || 600;
-  const h = 120;
+  const h = 140;
   canvas.width = w * dpr;
   canvas.height = h * dpr;
   const ctx = canvas.getContext("2d");
   ctx.scale(dpr, dpr);
   ctx.clearRect(0, 0, w, h);
 
-  const keys = SERIES_KEYS.filter((k) => (seriesCache.series[k] || []).some((v) => v !== null && v !== undefined));
-  if (keys.length === 0) return;
-
-  const all = keys.flatMap((k) => seriesCache.series[k].filter((v) => v !== null));
-  let min = Math.min(...all);
-  let max = Math.max(...all);
-  if (max === min) { max += 1; }
-  const pad = 6;
   const n = seriesCache.t.length;
+  if (n < 2) {
+    legend.textContent = "数据不足（≥2 个采样点才画曲线）";
+    return;
+  }
+  const keys = SERIES_KEYS.filter(
+    (k) => (seriesCache.series[k] || []).some((v) => v !== null && v !== undefined)
+  );
+  if (keys.length === 0) {
+    legend.textContent = "暂无曲线数据";
+    return;
+  }
 
-  document.getElementById("legend").textContent = keys
-    .map((k, i) => `<span style="color:${COLORS[i % COLORS.length]}">■ ${METRIC_META[k] || k}</span>`)
-    .join("&nbsp;&nbsp;");
+  const padT = 6, padB = 4, padX = 4;
+
+  // 每条曲线独立 min/max 归一化（量纲差异大，共轴会把小值压扁）
+  const ext = {};
+  for (const k of keys) {
+    const vals = seriesCache.series[k].filter((v) => v !== null && v !== undefined);
+    let mn = Math.min(...vals), mx = Math.max(...vals);
+    if (mx === mn) { mx += 1; mn = Math.max(0, mn - 1); }
+    ext[k] = [mn, mx];
+  }
 
   keys.forEach((k, ki) => {
     const vals = seriesCache.series[k];
+    const [mn, mx] = ext[k];
+    const toY = (v) => padT + (1 - (v - mn) / (mx - mn)) * (h - padT - padB);
     ctx.strokeStyle = COLORS[ki % COLORS.length];
-    ctx.lineWidth = 1.6;
+    ctx.lineWidth = 1.8;
     ctx.beginPath();
+    let pen = false;
     vals.forEach((v, i) => {
-      if (v === null || v === undefined) return;
-      const x = pad + (i / Math.max(1, n - 1)) * (w - pad * 2);
-      const y = pad + (1 - (v - min) / (max - min)) * (h - pad * 2);
-      i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+      const x = padX + (i / Math.max(1, n - 1)) * (w - padX * 2);
+      if (v === null || v === undefined) { pen = false; return; }  // 断点
+      const y = toY(v);
+      if (!pen) { ctx.moveTo(x, y); pen = true; } else { ctx.lineTo(x, y); }
     });
     ctx.stroke();
   });
+
+  legend.innerHTML = keys
+    .map((k, i) => `<span style="color:${COLORS[i % COLORS.length]}">■ ${METRIC_META[k] || k}</span>`)
+    .join("&nbsp;&nbsp;");
 }
 
 async function refresh() {
   const err = document.getElementById("err");
   try {
     const o = await getJSON("/api/overview?window=120");
+    const age = lastUpdateAt ? Math.round((Date.now() - lastUpdateAt) / 1000) : 0;
+    const collecting = o.collecting ? "· 实时采集中" : "";
     document.getElementById("meta").textContent =
-      `样本 ${o.sample_count} 条 · 窗口 ${o.window_seconds}s · ${new Date().toLocaleTimeString()}`;
+      `样本 ${o.sample_count} 条 · 窗口 ${o.window_seconds}s${collecting} · ${new Date().toLocaleTimeString()}（每秒自动刷新）`;
 
     const scoreEl = document.getElementById("score");
     scoreEl.textContent = o.score;
@@ -117,6 +142,7 @@ async function refresh() {
 
     renderFindings(o.findings);
     renderMetrics(o.metrics);
+    lastUpdateAt = Date.now();
     err.textContent = "";
 
     const s = await getJSON("/api/series?limit=90&metrics=" + SERIES_KEYS.join(","));
@@ -129,4 +155,4 @@ async function refresh() {
 }
 
 refresh();
-setInterval(refresh, 5000);
+setInterval(refresh, POLL_MS);

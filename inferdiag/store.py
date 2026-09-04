@@ -24,6 +24,8 @@ class SQLiteStore:
         self._init()
 
     def _init(self) -> None:
+        self._conn.execute("PRAGMA journal_mode=WAL")  # 多线程/多连接读写更稳
+        self._conn.execute("PRAGMA busy_timeout=8000")
         self._conn.execute(
             """
             CREATE TABLE IF NOT EXISTS samples (
