@@ -77,6 +77,27 @@ function renderMetrics(snapshot) {
     `<div class="m"><div class="v">${v}</div><div class="k">${k}</div></div>`).join("");
 }
 
+function fmtCompact(v) {
+  if (v === null || v === undefined || isNaN(v)) return "–";
+  const n = Math.floor(v);
+  if (Math.abs(n) >= 1e6) return (n / 1e6).toFixed(1) + "M";
+  if (Math.abs(n) >= 1e3) return (n / 1e3).toFixed(1) + "K";
+  return String(n);
+}
+
+function updateFooter(o) {
+  const lat = o.latest || {};
+  const m = o.metrics || {};
+  const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+  set("fReq", fmtCompact(lat.requests_success_total));
+  set("fSamples", fmt(o.sample_count));
+  set("fTtft", fmt(m.ttft_p50_ms));
+  set("fRate", fmt(m.generation_tokens_rate));
+  set("fCache", (m.prefix_cache_hit_pct == null ? "–" : fmt(m.prefix_cache_hit_pct) + "%"));
+  set("fIn", fmtCompact(lat.prompt_tokens_total));
+  set("fOut", fmtCompact(lat.generation_tokens_total));
+}
+
 async function refreshOverview() {
   const errEl = document.getElementById("err");
   try {
@@ -84,6 +105,7 @@ async function refreshOverview() {
     const collecting = o.collecting ? "· 实时采集中" : "";
     document.getElementById("meta").textContent =
       `样本 ${o.sample_count} 条 · 窗口 ${o.window_seconds}s${collecting} · ${new Date().toLocaleTimeString()}（实时）`;
+    updateFooter(o);
 
     // 只在数据真正变化时重绘 DOM，减少闪烁
     const key = JSON.stringify([o.score, o.findings, o.metrics]);
