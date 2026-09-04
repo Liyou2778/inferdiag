@@ -18,7 +18,9 @@ class SQLiteStore:
     def __init__(self, db_path: str | Path):
         self.db_path = Path(db_path)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
-        self._conn = sqlite3.connect(str(self.db_path))
+        # check_same_thread=False：FastAPI/uvicorn 在工作线程执行请求，
+        # 而连接在主线程创建——单进程读写由调用方保证时序即可。
+        self._conn = sqlite3.connect(str(self.db_path), check_same_thread=False, timeout=15)
         self._init()
 
     def _init(self) -> None:

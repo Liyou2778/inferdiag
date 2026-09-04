@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>inferdiag · LLM 推理体检</title>
+<style>
+  :root{
+    --bg:#0f1420; --card:#171e2e; --line:#263048; --fg:#e6ecf7; --dim:#8fa0bf;
+    --green:#2ecc71; --yellow:#f1c40f; --red:#e74c3c; --blue:#4aa3ff;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg);color:var(--fg);font-family:"Segoe UI",system-ui,"Microsoft YaHei",sans-serif;padding:20px}
+  h1{font-size:20px;font-weight:600}
+  .sub{color:var(--dim);font-size:12px;margin-top:4px}
+  .row{display:flex;flex-wrap:wrap;gap:14px;margin-top:16px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px;flex:1;min-width:200px}
+  .big{font-size:44px;font-weight:800;line-height:1}
+  .label{color:var(--dim);font-size:12px;margin-bottom:8px}
+  #score{font-size:56px;font-weight:900}
+  .badge{display:inline-block;padding:2px 10px;border-radius:999px;font-size:12px;font-weight:600;margin-right:6px}
+  .critical{background:rgba(231,76,60,.15);color:var(--red)}
+  .warning{background:rgba(241,196,15,.15);color:var(--yellow)}
+  .info{background:rgba(74,163,255,.15);color:var(--blue)}
+  .finding{border-bottom:1px solid var(--line);padding:10px 0}
+  .finding .name{font-weight:600;margin-bottom:4px}
+  .finding .sug{color:var(--dim);font-size:13px}
+  .finding .ev{color:var(--blue);font-size:12px;margin-top:4px;font-family:Consolas,monospace}
+  .ok{color:var(--green)}
+  .metrics{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;margin-top:14px}
+  .m{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px}
+  .m .v{font-size:20px;font-weight:700}
+  .m .k{color:var(--dim);font-size:11px;margin-top:2px}
+  canvas{width:100%;height:120px;display:block;margin-top:8px}
+  .dim{color:var(--dim);font-size:12px}
+  .err{color:var(--red);margin-top:12px}
+  .two{display:grid;grid-template-columns:2fr 1fr;gap:14px;margin-top:14px}
+  @media(max-width:900px){.two{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+  <h1>🩺 inferdiag · LLM 推理体检</h1>
+  <div class="sub" id="meta">加载中…</div>
+
+  <div class="row">
+    <div class="card" style="max-width:220px">
+      <div class="label">健康分</div>
+      <div id="score" style="color:var(--green)">–</div>
+      <div class="sub" id="scoreNote"></div>
+    </div>
+    <div class="card" style="flex:3">
+      <div class="label">诊断建议</div>
+      <div id="findings">–</div>
+    </div>
+  </div>
+
+  <div class="two">
+    <div class="card">
+      <div class="label">关键指标曲线（最近 <span id="nPts">–</span> 个采样点）</div>
+      <canvas id="chart"></canvas>
+      <div id="legend" class="dim"></div>
+    </div>
+    <div class="card">
+      <div class="label">当前快照</div>
+      <div class="metrics" id="metrics">–</div>
+    </div>
+  </div>
+  <div class="err" id="err"></div>
+  <script src="app.js"></script>
+</body>
+</html>

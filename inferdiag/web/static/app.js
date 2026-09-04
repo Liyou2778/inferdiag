@@ -1,0 +1,132 @@
+// inferdiag dashboard —— 无依赖原生 JS：轮询 overview + 画迷你曲线
+"use strict";
+
+const COLORS = ["#4aa3ff", "#f1c40f", "#e74c3c", "#2ecc71", "#e67e22", "#9b59b6"];
+const METRIC_META = {
+  kv_cache_usage_pct: "KV cache %",
+  ttft_p50_ms: "TTFT p50(ms)",
+  ttft_p99_ms: "TTFT p99(ms)",
+  e2e_p99_ms: "E2E p99(ms)",
+  num_running: "运行中请求",
+  num_waiting: "等待请求",
+};
+const LEVEL_CN = { critical: "严重", warning: "警告", info: "提示" };
+const SERIES_KEYS = ["kv_cache_usage_pct", "ttft_p50_ms", "e2e_p99_ms", "num_running"];
+
+let seriesCache = { t: [], series: {} };
+
+async function getJSON(url) {
+  const r = await fetch(url, { cache: "no-store" });
+  if (!r.ok) throw new Error(url + " -> HTTP " + r.status);
+  return r.json();
+}
+
+function fmt(v) {
+  if (v === null || v === undefined) return "–";
+  if (typeof v === "number") return Number.isInteger(v) ? String(v) : v.toFixed(2);
+  return String(v);
+}
+
+function renderFindings(findings) {
+  const el = document.getElementById("findings");
+  if (!findings || findings.length === 0) {
+    el.innerHTML = '<span class="ok">✓ 未发现明显问题</span>';
+    return;
+  }
+  el.innerHTML = findings
+    .map((f) => {
+      const ev = Object.entries(f.evidence || {}).map(([k, v]) => k + "=" + fmt(v)).join("，");
+      return `<div class="finding">
+        <div><span class="badge ${f.level}">${LEVEL_CN[f.level] || f.level}</span>
+        <span class="name">${f.rule_id} ${f.name}</span></div>
+        <div class="sug">💡 ${f.suggestion}</div>
+        ${ev ? `<div class="ev">证据: ${ev}</div>` : ""}
+      </div>`;
+    })
+    .join("");
+}
+
+function renderMetrics(snapshot) {
+  const el = document.getElementById("metrics");
+  const items = [
+    ["运行/等待", fmt(snapshot?.num_running) + " / " + fmt(snapshot?.num_waiting)],
+    ["KV cache", fmt(snapshot?.kv_cache_usage_pct) + "%"],
+    ["TTFT p50/p99", fmt(snapshot?.ttft_p50_ms) + " / " + fmt(snapshot?.ttft_p99_ms) + " ms"],
+    ["TPOT", fmt(snapshot?.tpot_ms) + " ms"],
+    ["E2E p50/p99", fmt(snapshot?.e2e_p50_ms) + " / " + fmt(snapshot?.e2e_p99_ms) + " ms"],
+    ["到达率", fmt(snapshot?.requests_success_rate) + " req/s"],
+    ["前缀命中", fmt(snapshot?.prefix_cache_hit_pct) + "%"],
+    ["生成速率", fmt(snapshot?.generation_tokens_rate) + " tok/s"],
+  ];
+  el.innerHTML = items
+    .map(([k, v]) => `<div class="m"><div class="v">${v}</div><div class="k">${k}</div></div>`)
+    .join("");
+}
+
+function drawChart() {
+  const canvas = document.getElementById("chart");
+  const dpr = window.devicePixelRatio || 1;
+  const w = canvas.clientWidth || 600;
+  const h = 120;
+  canvas.width = w * dpr;
+  canvas.height = h * dpr;
+  const ctx = canvas.getContext("2d");
+  ctx.scale(dpr, dpr);
+  ctx.clearRect(0, 0, w, h);
+
+  const keys = SERIES_KEYS.filter((k) => (seriesCache.series[k] || []).some((v) => v !== null && v !== undefined));
+  if (keys.length === 0) return;
+
+  const all = keys.flatMap((k) => seriesCache.series[k].filter((v) => v !== null));
+  let min = Math.min(...all);
+  let max = Math.max(...all);
+  if (max === min) { max += 1; }
+  const pad = 6;
+  const n = seriesCache.t.length;
+
+  document.getElementById("legend").textContent = keys
+    .map((k, i) => `<span style="color:${COLORS[i % COLORS.length]}">■ ${METRIC_META[k] || k}</span>`)
+    .join("&nbsp;&nbsp;");
+
+  keys.forEach((k, ki) => {
+    const vals = seriesCache.series[k];
+    ctx.strokeStyle = COLORS[ki % COLORS.length];
+    ctx.lineWidth = 1.6;
+    ctx.beginPath();
+    vals.forEach((v, i) => {
+      if (v === null || v === undefined) return;
+      const x = pad + (i / Math.max(1, n - 1)) * (w - pad * 2);
+      const y = pad + (1 - (v - min) / (max - min)) * (h - pad * 2);
+      i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+    });
+    ctx.stroke();
+  });
+}
+
+async function refresh() {
+  const err = document.getElementById("err");
+  try {
+    const o = await getJSON("/api/overview?window=120");
+    document.getElementById("meta").textContent =
+      `样本 ${o.sample_count} 条 · 窗口 ${o.window_seconds}s · ${new Date().toLocaleTimeString()}`;
+
+    const scoreEl = document.getElementById("score");
+    scoreEl.textContent = o.score;
+    scoreEl.style.color = o.score >= 90 ? "var(--green)" : o.score >= 60 ? "var(--yellow)" : "var(--red)";
+    document.getElementById("scoreNote").textContent = o.score >= 90 ? "状态良好" : o.score >= 60 ? "需要关注" : "存在严重问题";
+
+    renderFindings(o.findings);
+    renderMetrics(o.metrics);
+    err.textContent = "";
+
+    const s = await getJSON("/api/series?limit=90&metrics=" + SERIES_KEYS.join(","));
+    seriesCache = s;
+    document.getElementById("nPts").textContent = s.t.length;
+    drawChart();
+  } catch (e) {
+    err.textContent = "连接失败: " + e.message + "（请确认已运行 uv run inferdiag serve）";
+  }
+}
+
+refresh();
+setInterval(refresh, 5000);

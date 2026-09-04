@@ -120,10 +120,16 @@ def report(
 def serve(
     db: str = typer.Option("data/inferdiag.db", "--db"),
     host: str = "127.0.0.1",
-    port: int = 8000,
+    port: int = 8080,
 ) -> None:
-    """启动 Web 仪表盘（P4 实现）。"""
-    typer.echo(f"serve: Web 仪表盘将在 P4 实现（届时访问 http://{host}:{port}）。")
+    """启动 Web 仪表盘（读本地库，无需引擎在线）。"""
+    import uvicorn
+
+    from .web.app import create_app
+
+    web_app = create_app(db)
+    print(f"inferdiag dashboard -> http://{host}:{port}  (db={db})")
+    uvicorn.run(web_app, host=host, port=port, log_level="info")
 
 
 if __name__ == "__main__":
