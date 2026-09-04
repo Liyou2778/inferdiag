@@ -200,7 +200,7 @@ function drawChart() {
   const xOf = (ts) => padX + ((ts - t0) / span) * (w - padX * 2);
 
   keys.forEach((k) => {
-    const series = buildSeries(SERIES_KEYS.indexOf(k));
+    const series = buildSeries(k);
     if (!series) return;
     ctx.strokeStyle = COLORS[SERIES_KEYS.indexOf(k) % COLORS.length];
     ctx.lineWidth = 1.8;
