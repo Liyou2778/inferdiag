@@ -213,7 +213,7 @@ Windows 下多线程访问已通过 `check_same_thread=False` + WAL 处理；若
 
 - 库文件默认 `data/inferdiag.db`（已被 git 忽略）；表 `samples(ts, engine, payload)`，`payload` 为归一化样本 JSON。
 - 常用脚本：`scripts/serve_mock_metrics.py`（Mock 源）、`scripts/pressure_test.py`（一次性压测）、`scripts/continuous_load.py`（持续轻负载）。
-- 文档：`docs/architecture.md`、`docs/calibration.md`、`docs/acceptance-test.md`、`docs/demo-script.md`。
+- 文档：`docs/architecture.md`、`docs/calibration.md`、`docs/acceptance-test.md`。
 
 ## 10. License 与免责
 
