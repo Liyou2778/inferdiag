@@ -1,7 +1,8 @@
 // inferdiag dashboard —— 无依赖原生 JS：实时轮询 + 多尺度曲线
 "use strict";
 
-const COLORS = ["#4aa3ff", "#f1c40f", "#e74c3c", "#2ecc71", "#e67e22", "#9b59b6"];
+// EF 终端配色：主黄 #fff44f / 冷青 #8fd8ff / 告警红 #ff7979 / 薄荷 #b3e55e
+const COLORS = ["#fff44f", "#8fd8ff", "#ff7979", "#b3e55e", "#ffb020", "#c9a0ff"];
 const METRIC_META = {
   kv_cache_usage_pct: "KV cache %",
   ttft_p50_ms: "TTFT p50(ms)",
@@ -137,7 +138,7 @@ async function refresh() {
 
     const scoreEl = document.getElementById("score");
     scoreEl.textContent = o.score;
-    scoreEl.style.color = o.score >= 90 ? "var(--green)" : o.score >= 60 ? "var(--yellow)" : "var(--red)";
+    scoreEl.style.color = o.score >= 90 ? "#fff44f" : o.score >= 60 ? "#ffb020" : "#ff7979";
     document.getElementById("scoreNote").textContent = o.score >= 90 ? "状态良好" : o.score >= 60 ? "需要关注" : "存在严重问题";
 
     renderFindings(o.findings);
