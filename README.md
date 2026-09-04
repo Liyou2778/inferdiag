@@ -77,6 +77,16 @@ inferdiag report            # 终端版体检报告
 
 ---
 
+### 实时监控（边采边看，每秒刷新）
+
+```bash
+uv run inferdiag serve --db data/live.db -m http://localhost:8000/metrics --collect-interval 1
+# 打开 http://127.0.0.1:8080 —— 每 1s 自动刷新；加负载时曲线实时跳动
+```
+
+配套工具：`scripts/pressure_test.py`（一次性并发压测）、`scripts/continuous_load.py`（持续轻负载演示）。
+校准方法与实测基线（RTX 4060 + Qwen3B-AWQ）见 [`docs/calibration.md`](docs/calibration.md)。
+
 ## 架构（速览）
 
 ```
