@@ -41,12 +41,18 @@ def main() -> None:
     ap.add_argument("--max-tokens", type=int, default=300)
     args = ap.parse_args()
 
-    base = args.url.rsplit("/chat/completions", 1)[0] if "/chat/completions" in args.url else args.url
+    # 服务器根地址：去掉 "/v1/chat/completions" 尾巴
+    if "/v1/chat/completions" in args.url:
+        server = args.url.split("/v1/chat/completions", 1)[0]
+    elif "/chat/completions" in args.url:
+        server = args.url.split("/chat/completions", 1)[0]
+    else:
+        server = args.url.rstrip("/")
     if args.model:
         model = args.model
         print(f"模型（手动指定）: {model}")
     else:
-        model = discover(base)
+        model = discover(server)  # discover 内部拼 /v1/models
         print(f"模型（自动发现）: {model}")
 
     print("本地模型对话就绪（输入 exit 退出 / Ctrl+C 中断）")
