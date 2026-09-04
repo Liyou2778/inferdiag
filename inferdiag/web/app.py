@@ -66,7 +66,7 @@ def create_app(
                     app.state.store.insert_sample(sample)
                 except Exception as exc:  # noqa: BLE001 引擎短暂不可用不应中断看板
                     print(f"[collector] scrape failed: {exc}", flush=True)
-                time.sleep(max(0.5, collect_interval))
+                time.sleep(max(0.2, collect_interval))
 
         threading.Thread(target=_collector_loop, name="inferdiag-collector", daemon=True).start()
 
