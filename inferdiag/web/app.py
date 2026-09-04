@@ -5,7 +5,9 @@
 
 from __future__ import annotations
 
+import json
 import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from fastapi import FastAPI, Query, Request
@@ -39,6 +41,11 @@ def create_app(
     app.state.store = SQLiteStore(db_path)
     app.state.db_path = db_path
     app.state.collect_url = collect_url
+    app.state.engine_base = None
+    if collect_url and "/metrics" in collect_url:
+        app.state.engine_base = collect_url.split("/metrics", 1)[0]
+    # 一键演示压测控制器
+    app.state.demo = {"stop": True, "active": False, "ok": 0, "err": 0, "model": None}
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
     if collect_url:
@@ -106,6 +113,90 @@ def create_app(
             "rows": store.count(),
             "collect_url": app.state.collect_url,
             "collecting": app.state.collect_url is not None,
+        }
+
+    # ---------- 一键演示压测（让曲线"跳起来"） ----------
+
+    def _discover_model(base: str) -> str | None:
+        """从引擎 OpenAI 兼容 /v1/models 发现服务模型名。"""
+        import urllib.request
+
+        try:
+            with urllib.request.urlopen(f"{base}/v1/models", timeout=5) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+                return data["data"][0]["id"]
+        except Exception:  # noqa: BLE001
+            return None
+
+    def _demo_worker(params: dict) -> None:
+        import threading
+        import urllib.request
+
+        base = app.state.engine_base
+        model = app.state.demo["model"] or _discover_model(base)
+        if not model:
+            return
+        payload = {
+            "model": model,
+            "messages": [{"role": "user", "content": "请写一篇短文介绍人工智能的发展前景，约500字。"}],
+            "max_tokens": int(params.get("max_tokens", 400)),
+        }
+        workers = int(params.get("workers", 3))
+        total = int(params.get("requests", 12))
+        lock = threading.Lock()
+        req = urllib.request.Request(
+            base + "/v1/chat/completions",
+            data=json.dumps(payload).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+        )
+
+        def _fire() -> None:
+            try:
+                with urllib.request.urlopen(req, timeout=180) as resp:
+                    resp.read()
+                with lock:
+                    app.state.demo["ok"] += 1
+            except Exception:  # noqa: BLE001
+                with lock:
+                    app.state.demo["err"] += 1
+
+        sent = 0
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            while sent < total and not app.state.demo["stop"]:
+                for _ in range(min(workers, total - sent)):
+                    pool.submit(_fire)
+                    sent += 1
+                time.sleep(0.5)
+        app.state.demo["active"] = False
+
+    @app.post("/api/demo/start")
+    async def demo_start(request: Request):
+        if app.state.collect_url is None or not app.state.engine_base:
+            return JSONResponse({"ok": False, "error": "当前非实时采集模式（serve 未加 -m），无法演示压测"})
+        if app.state.demo["active"]:
+            return JSONResponse({"ok": False, "error": "演示压测已在进行中"})
+        params = await request.json()
+        app.state.demo.update({"stop": False, "active": True, "ok": 0, "err": 0})
+        app.state.demo["model"] = _discover_model(app.state.engine_base)
+        import threading
+
+        threading.Thread(target=_demo_worker, args=(params,), daemon=True).start()
+        return JSONResponse({"ok": True, "active": True, "model": app.state.demo["model"]})
+
+    @app.post("/api/demo/stop")
+    async def demo_stop():
+        app.state.demo["stop"] = True
+        return JSONResponse({"ok": True, "stopping": True})
+
+    @app.get("/api/demo/status")
+    def demo_status():
+        d = app.state.demo
+        return {
+            "active": d["active"],
+            "ok": d["ok"],
+            "err": d["err"],
+            "engine_base": app.state.engine_base,
+            "model": d["model"],
         }
 
     @app.exception_handler(Exception)

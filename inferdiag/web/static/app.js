@@ -157,3 +157,42 @@ async function refresh() {
 
 refresh();
 setInterval(refresh, POLL_MS);
+
+// ---------- 一键演示压测 ----------
+async function postJSON(url, body) {
+  const r = await fetch(url, { method: "POST", cache: "no-store",
+    headers: { "Content-Type": "application/json" }, body: body ? JSON.stringify(body) : "{}" });
+  return r.json();
+}
+
+async function demoStart(workers, requests, maxTokens) {
+  const st = document.getElementById("demoStatus");
+  try {
+    const d = await postJSON("/api/demo/start", { workers, requests, max_tokens: maxTokens });
+    st.textContent = d.ok ? "压测启动中…" : "启动失败: " + (d.error || "?");
+  } catch (e) { st.textContent = "请求失败: " + e.message; }
+}
+
+async function demoStop() {
+  try { await postJSON("/api/demo/stop", {}); } catch (e) { /* 忽略 */ }
+}
+
+async function renderDemo() {
+  const el = document.getElementById("demoStatus");
+  const btns = ["dLight", "dMed", "dHeavy", "dStop"];
+  try {
+    const d = await getJSON("/api/demo/status");
+    const active = d.active === true || (d.stop === false);
+    btns.slice(0, 3).forEach((id) => { document.getElementById(id).disabled = active; });
+    document.getElementById("dStop").disabled = !active;
+    if (active) {
+      el.textContent = `压测进行中 · 成功 ${d.ok} / 失败 ${d.err}${d.model ? " · " + d.model : ""}`;
+    } else {
+      const idle = d.ok === 0 && d.err === 0 ? "空闲" : `已结束 · 成功 ${d.ok} / 失败 ${d.err}`;
+      el.textContent = d.engine_base ? idle : "未连接引擎（serve 需加 -m）";
+    }
+  } catch (e) { /* 看板主轮询报错会单独提示 */ }
+}
+
+setInterval(renderDemo, 1000);
+renderDemo();

@@ -75,3 +75,22 @@ def test_overview_on_empty_db_no_crash():
             assert o["sample_count"] == 0
         finally:
             app.state.store.close()
+
+
+def test_demo_endpoints_static_mode_guarded():
+    """静态库模式（未加 -m）下，一键压测应给出明确错误而非崩溃。"""
+    with tempfile.TemporaryDirectory() as d:
+        db = str(Path(d) / "t.db")
+        SQLiteStore(db).close()
+        app = create_app(db)  # 无 collect_url
+        client = TestClient(app)
+        try:
+            st = client.get("/api/demo/status").json()
+            assert st["active"] is False
+            assert st["engine_base"] is None
+
+            r = client.post("/api/demo/start", json={"workers": 2, "requests": 4, "max_tokens": 100}).json()
+            assert r["ok"] is False
+            assert "error" in r
+        finally:
+            app.state.store.close()

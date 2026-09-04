@@ -66,12 +66,32 @@
   #legend{color:var(--ef-dim);font-size:11px;margin-top:8px;letter-spacing:.04em}
   #legend span{margin-right:14px}
   #meta b{color:var(--ef-yellow)}
+  .btn{
+    background:transparent; color:var(--ef-yellow); border:1px solid var(--ef-yellow-dim);
+    border-radius:1px; padding:6px 14px; font-size:12px; letter-spacing:.12em; cursor:pointer;
+    font-family:inherit; transition:all .15s ease;
+  }
+  .btn:hover{background:rgba(255,244,79,.12); box-shadow:0 0 10px rgba(255,244,79,.25)}
+  .btn.danger{color:var(--ef-red); border-color:rgba(255,121,121,.5)}
+  .btn:disabled{opacity:.35;cursor:not-allowed}
+  .demoBar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:14px;position:relative;z-index:1}
+  .demoBar .t{color:var(--ef-dim);font-size:11px;letter-spacing:.18em;text-transform:uppercase}
+  #demoStatus{color:var(--ef-yellow);font-size:12px;margin-left:auto;letter-spacing:.05em}
   @media(max-width:900px){.two{grid-template-columns:1fr}}
 </style>
 </head>
 <body>
   <h1>Inferdiag · 推理体检终端</h1>
   <div class="sub" id="meta">连接中…</div>
+
+  <div class="demoBar">
+    <span class="t">Demo Load · 一键压测演示</span>
+    <button class="btn" id="dLight" onclick="demoStart(2,8,300)">轻</button>
+    <button class="btn" id="dMed" onclick="demoStart(4,16,500)">中</button>
+    <button class="btn" id="dHeavy" onclick="demoStart(6,28,800)">重</button>
+    <button class="btn danger" id="dStop" onclick="demoStop()">停止</button>
+    <span id="demoStatus">空闲</span>
+  </div>
 
   <div class="row">
     <div class="card" style="max-width:230px">
