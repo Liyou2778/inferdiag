@@ -196,3 +196,99 @@ async function renderDemo() {
 
 setInterval(renderDemo, 1000);
 renderDemo();
+
+// ---------- 一键检测：进度实时展示 + 完成后渲染本次报告 ----------
+let scanRenderedId = 0;
+
+function fmtNum(v) {
+  if (v === null || v === undefined) return "–";
+  return typeof v === "number" ? (Number.isInteger(v) ? String(v) : v.toFixed(2)) : String(v);
+}
+
+function renderScanReport(r) {
+  const box = document.getElementById("scanResultBody");
+  if (!r || !r.findings) return;
+  const scoreColor = r.score >= 90 ? "#fff44f" : r.score >= 60 ? "#ffb020" : "#ff7979";
+  const findings = r.findings.length
+    ? r.findings.map((f) => {
+        const ev = Object.entries(f.evidence || {}).map(([k, v]) => k + "=" + fmtNum(v)).join("，");
+        const lv = { critical: "严重", warning: "警告", info: "提示" }[f.level] || f.level;
+        return `<div class="finding">
+          <div><span class="badge ${f.level}">${lv}</span><span class="name">${f.rule_id} ${f.name}</span></div>
+          <div class="ev">证据: ${ev}</div>
+          <div class="sug">💡 ${f.suggestion}</div></div>`;
+      }).join("")
+    : '<span class="ok">✓ 未发现明显问题</span>';
+
+  const items = [
+    ["KV cache", fmtNum(r.metrics.kv_cache_usage_pct) + "%"],
+    ["TTFT p50/p99", fmtNum(r.metrics.ttft_p50_ms) + " / " + fmtNum(r.metrics.ttft_p99_ms) + " ms"],
+    ["E2E p50/p99", fmtNum(r.metrics.e2e_p50_ms) + " / " + fmtNum(r.metrics.e2e_p99_ms) + " ms"],
+    ["运行/等待", fmtNum(r.metrics.num_running) + " / " + fmtNum(r.metrics.num_waiting)],
+    ["到达率", fmtNum(r.metrics.requests_success_rate) + " req/s"],
+    ["前缀命中", fmtNum(r.metrics.prefix_cache_hit_pct) + "%"],
+  ];
+  box.innerHTML = `
+    <div style="display:flex;align-items:baseline;gap:16px;flex-wrap:wrap">
+      <div style="font-size:44px;font-weight:900;color:${scoreColor}">${r.score}</div>
+      <div class="sub">健康分 / 100 · 样本 ${r.sample_count} 条 · 窗口 ${r.window_seconds}s
+      <br>检测时间：${new Date(r.generated_at * 1000).toLocaleString()}</div>
+    </div>
+    <div style="margin-top:12px">${findings}</div>
+    <div class="metrics">${items.map(([k, v]) => `<div class="m"><div class="v">${v}</div><div class="k">${k}</div></div>`).join("")}</div>`;
+  document.getElementById("scanResult").style.display = "block";
+  document.getElementById("scanResult").scrollIntoView({ behavior: "smooth", block: "nearest" });
+}
+
+async function scanStart() {
+  try {
+    const d = await postJSON("/api/scan/start", { duration: 30 });
+    if (!d.ok) {
+      document.getElementById("scanState").textContent = "启动失败：" + (d.error || "?");
+      return;
+    }
+    document.getElementById("btnScan").disabled = true;
+    document.getElementById("btnScanStop").style.display = "inline-block";
+    document.getElementById("scanState").textContent = "检测进行中…";
+  } catch (e) {
+    document.getElementById("scanState").textContent = "请求失败：" + e.message;
+  }
+}
+
+async function scanStop() {
+  try { await postJSON("/api/scan/stop", {}); } catch (e) { /* 忽略 */ }
+}
+
+async function scanTick() {
+  const st = document.getElementById("scanState");
+  try {
+    const s = await getJSON("/api/scan/status");
+    const logEl = document.getElementById("scanLog");
+    logEl.textContent = s.log.length ? s.log.slice(-14).join("\n") : logEl.textContent;
+
+    if (s.running) {
+      st.textContent = `检测中 ${s.step}/${s.duration} · 已用 ${s.elapsed}s`;
+      st.className = "scanState";
+      document.getElementById("btnScan").disabled = true;
+      document.getElementById("btnScanStop").style.display = "inline-block";
+      document.getElementById("scanBar").style.width = (s.duration ? (s.step / s.duration) * 100 : 0) + "%";
+      document.getElementById("scanResult").style.display = "none";
+      return;
+    }
+    document.getElementById("btnScan").disabled = false;
+    document.getElementById("btnScanStop").style.display = "none";
+    if (s.done && s.report && s.report.generated_at !== scanRenderedId) {
+      scanRenderedId = s.report.generated_at;
+      st.textContent = "检测完成";
+      renderScanReport(s.report);
+    } else if (!s.done && s.step === 0) {
+      st.textContent = s.engine_base ? "未开始：点击按钮自动采集并实时显示进度" : "未连接引擎（serve 需加 -m）";
+      st.className = "scanState idle";
+    } else if (s.done) {
+      st.textContent = "检测完成（点击可再次检测）";
+    }
+  } catch (e) { /* 忽略瞬时错误 */ }
+}
+
+setInterval(scanTick, 1000);
+scanTick();

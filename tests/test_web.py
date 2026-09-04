@@ -92,5 +92,13 @@ def test_demo_endpoints_static_mode_guarded():
             r = client.post("/api/demo/start", json={"workers": 2, "requests": 4, "max_tokens": 100}).json()
             assert r["ok"] is False
             assert "error" in r
+
+            # 一键检测：静态模式下同样应明确拒绝
+            sr = client.post("/api/scan/start", json={"duration": 10}).json()
+            assert sr["ok"] is False
+            assert "error" in sr
+            st2 = client.get("/api/scan/status").json()
+            assert st2["running"] is False
+            assert st2["report"] is None
         finally:
             app.state.store.close()

@@ -46,6 +46,11 @@ def create_app(
         app.state.engine_base = collect_url.split("/metrics", 1)[0]
     # 一键演示压测控制器
     app.state.demo = {"stop": True, "active": False, "ok": 0, "err": 0, "model": None}
+    # 一键检测状态机
+    app.state.scan = {
+        "running": False, "done": False, "stop": False, "started_at": 0,
+        "duration": 0, "step": 0, "log": [], "report": None, "error": None,
+    }
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
     if collect_url:
@@ -197,6 +202,84 @@ def create_app(
             "err": d["err"],
             "engine_base": app.state.engine_base,
             "model": d["model"],
+        }
+
+    # ---------- 一键检测：点一下 -> 实时采集 -> 自动出报告 ----------
+
+    def _scan_worker(duration: int) -> None:
+        from ..collector.scrape import scrape_sample
+
+        store = app.state.store
+        sc = app.state.scan
+        sc["log"] = []
+        sc["error"] = None
+        sc["started_at"] = time.time()
+        for i in range(1, duration + 1):
+            if sc["stop"]:
+                break
+            try:
+                sample = scrape_sample(collect_url, engine=collect_engine)
+                store.insert_sample(sample)
+                msg = (
+                    f"[{i}/{duration}] 采集完成 running={sample.num_running} "
+                    f"kv={sample.kv_cache_usage_pct}% ttft_p50={sample.ttft_p50_ms}ms"
+                )
+            except Exception as exc:  # noqa: BLE001
+                msg = f"[{i}/{duration}] 采集失败: {exc}"
+            sc["step"] = i
+            sc["log"].append(msg)
+            if len(sc["log"]) > 60:
+                sc["log"] = sc["log"][-60:]
+            time.sleep(1)
+
+        metrics = store.window_metrics(duration + 10)
+        report = build_report(metrics, duration + 10, estimate_cost(metrics))
+        sc["report"] = {
+            "score": report["score"],
+            "sample_count": report["sample_count"],
+            "window_seconds": report["window_seconds"],
+            "findings": report["findings"],
+            "metrics": {k: v for k, v in metrics.items() if v is not None},
+            "generated_at": time.time(),
+        }
+        sc["log"].append(f"检测完成：健康分 {report['score']}/100，样本 {report['sample_count']} 条")
+        sc["running"] = False
+        sc["done"] = True
+
+    @app.post("/api/scan/start")
+    async def scan_start(request: Request):
+        if not app.state.collect_url or not app.state.engine_base:
+            return JSONResponse({"ok": False, "error": "非实时采集模式（serve 未加 -m），无法一键检测"})
+        sc = app.state.scan
+        if sc["running"]:
+            return JSONResponse({"ok": False, "error": "检测已在进行中"})
+        body = await request.json()
+        duration = int(max(5, min(180, body.get("duration", 30))))
+        sc.update({"running": True, "done": False, "step": 0, "duration": duration, "stop": False})
+        import threading
+
+        threading.Thread(target=_scan_worker, args=(duration,), daemon=True).start()
+        return JSONResponse({"ok": True, "duration": duration})
+
+    @app.post("/api/scan/stop")
+    async def scan_stop():
+        app.state.scan["stop"] = True
+        return JSONResponse({"ok": True})
+
+    @app.get("/api/scan/status")
+    def scan_status():
+        sc = app.state.scan
+        elapsed = round(time.time() - sc["started_at"], 1) if sc["started_at"] else 0
+        return {
+            "running": sc["running"],
+            "done": sc["done"],
+            "duration": sc["duration"],
+            "step": sc["step"],
+            "elapsed": elapsed,
+            "log": sc["log"],
+            "report": sc["report"],
+            "error": sc["error"],
+            "engine_base": app.state.engine_base,
         }
 
     @app.exception_handler(Exception)

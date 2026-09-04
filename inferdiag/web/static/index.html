@@ -77,6 +77,16 @@
   .demoBar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:14px;position:relative;z-index:1}
   .demoBar .t{color:var(--ef-dim);font-size:11px;letter-spacing:.18em;text-transform:uppercase}
   #demoStatus{color:var(--ef-yellow);font-size:12px;margin-left:auto;letter-spacing:.05em}
+  /* 一键检测 */
+  .scanCard{margin-top:14px}
+  .scanRow{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:8px}
+  .scanState{color:var(--ef-yellow);font-size:13px}
+  .scanState.idle{color:var(--ef-dim)}
+  .track{flex:1;min-width:160px;height:6px;background:#0e1114;border:1px solid rgba(255,244,79,.2)}
+  #scanBar{height:100%;width:0%;background:var(--ef-yellow);box-shadow:0 0 8px rgba(255,244,79,.5);transition:width .4s}
+  .scanLog{font-family:Consolas,"Space Grotesk",monospace;font-size:11px;color:var(--ef-dim);
+    background:#0a0d10;border:1px solid rgba(255,255,255,.06);padding:8px;height:110px;
+    overflow-y:auto;margin-top:10px;white-space:pre-wrap;word-break:break-all}
   @media(max-width:900px){.two{grid-template-columns:1fr}}
 </style>
 </head>
@@ -91,6 +101,22 @@
     <button class="btn" id="dHeavy" onclick="demoStart(6,28,800)">重</button>
     <button class="btn danger" id="dStop" onclick="demoStop()">停止</button>
     <span id="demoStatus">空闲</span>
+  </div>
+
+  <div class="card scanCard">
+    <div class="label">One-Click Scan · 一键检测</div>
+    <div class="scanRow">
+      <button class="btn on" id="btnScan" onclick="scanStart()">▶ 开始一键检测（默认 30 秒）</button>
+      <button class="btn danger" id="btnScanStop" style="display:none" onclick="scanStop()">停止</button>
+      <span class="scanState idle" id="scanState">未开始：点击后自动采集并实时显示进度</span>
+      <div class="track"><div id="scanBar"></div></div>
+    </div>
+    <pre class="scanLog" id="scanLog">（实时进度将显示在这里）</pre>
+  </div>
+
+  <div class="card" id="scanResult" style="display:none;margin-top:14px">
+    <div class="label">Scan Report · 本次一键检测报告</div>
+    <div id="scanResultBody">–</div>
   </div>
 
   <div class="row">
