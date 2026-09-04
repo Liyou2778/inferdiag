@@ -43,6 +43,10 @@ def test_overview_and_series():
             assert r.status_code == 200
             assert "inferdiag" in r.text
 
+            js = client.get("/static/app.js")
+            assert js.status_code == 200
+            assert "refresh" in js.text
+
             o = client.get("/api/overview?window=60").json()
             assert o["score"] == 100  # 低负载小样本应健康（R11 校准后 15s<20s）
             assert o["sample_count"] >= 5

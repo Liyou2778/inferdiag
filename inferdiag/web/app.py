@@ -10,6 +10,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, Query, Request
 from fastapi.responses import FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 
 from ..cost import estimate_cost
 from ..report import build_report
@@ -32,6 +33,7 @@ def create_app(db_path: str = "data/inferdiag.db") -> FastAPI:
     app = FastAPI(title="inferdiag", docs_url="/api/docs", openapi_url="/api/openapi.json")
     app.state.store = SQLiteStore(db_path)
     app.state.db_path = db_path
+    app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
     @app.get("/", include_in_schema=False)
     def index() -> FileResponse:
