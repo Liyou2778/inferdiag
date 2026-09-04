@@ -7,8 +7,8 @@ from __future__ import annotations
 
 from typing import Any
 
-# 单价示例（每百万 token 人民币）：接入真实部署时按你的账单配置
-PRICING: dict[str, float] | None = None  # 例如 {"input_per_mtok": 1.0, "output_per_mtok": 3.0}
+# 单价（每百万 token，人民币）：开箱即用的示例值，接入真实部署时按实际账单修改
+PRICING: dict[str, float] | None = {"input_per_mtok": 1.0, "output_per_mtok": 3.0}
 
 
 def estimate_cost(metrics: dict[str, Any]) -> dict[str, Any] | None:
