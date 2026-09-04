@@ -4,6 +4,8 @@
 
 定位是监控体系的补充层：Grafana / Prometheus 负责指标展示，inferdiag 负责把指标变成结论。它不拦截流量、不替代监控面板、不采集业务数据。
 
+安装、接入数据源、CLI / Web 用法、规则与阈值配置、故障排查见 [docs/USER_GUIDE.md](docs/USER_GUIDE.md)。
+
 ## 功能
 
 | 模块 | 说明 | 状态 |
