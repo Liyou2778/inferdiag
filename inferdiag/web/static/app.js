@@ -142,10 +142,6 @@ function drawChart() {
     return;
   }
   const now = Date.now() / 1000;
-  const t0 = t[0];
-  const tEnd = Math.max(t[n - 1], now);
-  const span = Math.max(1e-6, tEnd - t0);
-  const xOf = (ts) => padX + ((ts - t0) / span) * (w - padX * 2);
 
   // 只在首尾点变化时重算图例（避免每帧重建）
   const keys = SERIES_KEYS.filter((k) => (seriesCache.series[k] || []).some((v) => v !== null));
@@ -155,23 +151,64 @@ function drawChart() {
     drawLegend(keys.map((k) => `<span style="color:${COLORS[SERIES_KEYS.indexOf(k) % COLORS.length]}">■ ${METRIC_META[k] || k}</span>`));
   }
 
-  keys.forEach((k, ki) => {
-    const vals = seriesCache.series[k];
-    const nums = vals.filter((v) => v !== null && v !== undefined);
-    if (nums.length < 2) return;
-    let mn = Math.min(...nums), mx = Math.max(...nums);
-    if (mx === mn) { mx += 1; mn = Math.max(0, mn - 1); }
-    const yOf = (v) => padT + (1 - (v - mn) / (mx - mn)) * (h - padT - padB);
+  // 平滑：最后采样点之后，按最近斜率外推一个"实时端点"，随墙钟连续前移，
+  // 直到下一个真实采样到达再锚定 —— 消除"一格一格跳"。
+  function buildSeries(ki) {
+    const vals = seriesCache.series[ki];
+    if (!vals) return null;
+    const idx = [];
+    const xs = [];
+    const ys = [];
+    let prevReal = null, prevPrevReal = null; // (t, v)
+    let j = -1;
+    for (let i = 0; i < n; i++) {
+      const v = vals[i];
+      if (v === null || v === undefined) continue;
+      j++;
+      const tk = t[i];
+      idx.push(j);
+      xs.push(tk);
+      ys.push(v);
+      prevPrevReal = prevReal;
+      prevReal = { t: tk, v };
+    }
+    if (ys.length < 2) return null;
 
-    ctx.strokeStyle = COLORS[ki % COLORS.length];
+    // y 范围按真实点标定
+    let mn = Math.min(...ys), mx = Math.max(...ys);
+    if (mx === mn) { mx += 1; mn = Math.max(0, mn - 1); }
+    const yOf = (v) => Math.min(Math.max(padT, padT + (1 - (v - mn) / (mx - mn)) * (h - padT - padB)), h - padB);
+
+    // 追加实时外推端点（60fps 每帧前移）
+    if (prevReal && now > prevReal.t) {
+      let tipV = prevReal.v;
+      if (prevPrevReal && prevReal.t - prevPrevReal.t > 1e-6) {
+        const slope = (prevReal.v - prevPrevReal.v) / (prevReal.t - prevPrevReal.t);
+        const maxStep = Math.abs(prevReal.v - prevPrevReal.v); // 最多再延伸一个同样量级的变化
+        const ext = slope * (now - prevReal.t);
+        tipV = prevReal.v + Math.max(-maxStep, Math.min(maxStep, ext));
+      }
+      xs.push(now);
+      ys.push(tipV);
+    }
+    return { xs, ys, yOf };
+  }
+
+  const t0 = t[0];
+  const tEnd = Math.max(t[n - 1], now);
+  const span = Math.max(1e-6, tEnd - t0);
+  const xOf = (ts) => padX + ((ts - t0) / span) * (w - padX * 2);
+
+  keys.forEach((k) => {
+    const series = buildSeries(SERIES_KEYS.indexOf(k));
+    if (!series) return;
+    ctx.strokeStyle = COLORS[SERIES_KEYS.indexOf(k) % COLORS.length];
     ctx.lineWidth = 1.8;
     ctx.beginPath();
     let pen = false;
-    for (let i = 0; i < n; i++) {
-      const v = vals[i];
-      if (v === null || v === undefined) { pen = false; continue; }
-      const x = xOf(t[i]);
-      const y = yOf(v);
+    for (let i = 0; i < series.xs.length; i++) {
+      const x = xOf(series.xs[i]);
+      const y = series.yOf(series.ys[i]);
       if (!pen) { ctx.moveTo(x, y); pen = true; } else { ctx.lineTo(x, y); }
     }
     ctx.stroke();
