@@ -96,9 +96,44 @@
   .footer b{color:var(--ef-yellow);font-weight:600}
   .footer .sep{color:rgba(255,244,79,.3)}
   @media(max-width:900px){.two{grid-template-columns:1fr};.footer{gap:12px;font-size:11px}}
+  /* ===== 开屏动画（终末地工业风） ===== */
+  #splash{
+    position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;
+    background:
+      linear-gradient(110deg, transparent 0 71%, rgba(255,244,79,.05) 71% 71.3%, transparent 71.3%),
+      linear-gradient(rgba(255,255,255,.02) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,255,255,.02) 1px, transparent 1px),
+      var(--ef-black);
+    background-size:auto, 56px 56px, 56px 56px; transition:opacity .3s ease;
+  }
+  #splashBar{
+    position:absolute;left:0;top:0;width:6px;height:0%;
+    background:var(--ef-yellow);box-shadow:0 0 14px rgba(255,244,79,.6);
+    transition:height 1.4s cubic-bezier(.65,.05,.36,1);
+  }
+  #splashLogo{text-align:center}
+  #splashLogo .mark{color:var(--ef-yellow);font-size:30px;text-shadow:0 0 16px rgba(255,244,79,.6)}
+  #splashLogo .name{font-size:30px;font-weight:900;letter-spacing:.28em;text-transform:uppercase;margin-top:6px}
+  #splashLogo .tag{color:var(--ef-dim);font-size:11px;letter-spacing:.42em;text-transform:uppercase;margin-top:8px}
+  #wipe{
+    position:fixed;inset:0;z-index:9998;background:var(--ef-yellow);
+    transform:translateX(-100%);transition:transform .55s cubic-bezier(.7,0,.3,1);
+  }
+  #wipe.in{transform:translateX(0)}
+  #wipe.out{transform:translateX(100%)}
 </style>
 </head>
 <body>
+  <div id="splash">
+    <div id="splashBar"></div>
+    <div id="splashLogo">
+      <div class="mark">▮</div>
+      <div class="name">Inferdiag</div>
+      <div class="tag">LLM 推理体检终端</div>
+    </div>
+  </div>
+  <div id="wipe"></div>
+
   <h1>Inferdiag · 推理体检终端</h1>
   <div class="sub" id="meta">连接中…</div>
 
@@ -162,6 +197,20 @@
     <span>窗口成本 <b id="fCost">–</b></span>
   </div>
 
-  <script src="/static/app.js?v=20260904c"></script>
+  <script>
+    // 开屏动画时序：进度条填满 → 黄幕左→右铺满 → 黄幕左→右滑出露出主界面
+    (function () {
+      var bar = document.getElementById("splashBar");
+      var splash = document.getElementById("splash");
+      var wipe = document.getElementById("wipe");
+      if (!bar || !splash || !wipe) return;
+      requestAnimationFrame(function () { bar.style.height = "100%"; });
+      setTimeout(function () { wipe.classList.add("in"); }, 1450);            // 黄幕铺满
+      setTimeout(function () { splash.style.opacity = "0"; }, 1700);           // 隐掉 logo/进度条
+      setTimeout(function () { wipe.classList.add("out"); }, 1950);           // 黄幕滑出
+      setTimeout(function () { splash.remove(); wipe.remove(); }, 2600);      // 移除开屏层
+    })();
+  </script>
+  <script src="/static/app.js?v=20260904d"></script>
 </body>
 </html>
