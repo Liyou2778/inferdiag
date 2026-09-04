@@ -1,7 +1,12 @@
-# inferdiag 诊断规则 v0
-# 说明：阈值为 v0 初始值，必须先跑一轮"正常负载基线"再校准（阈值≈基线×1.5~2）。
+# inferdiag 诊断规则 v0.1（已按真实引擎校准）
+# 校准环境：RTX 4060 Laptop 8GB (WSL2) + vLLM 0.8.5 + Qwen2.5-3B-Instruct-AWQ，max_len=4096
+# 实测基线（2026-09，见 docs/architecture.md 校准记录）：
+#   空闲: kv≈0%, running=0
+#   4 并发负载: kv≈3.1%, TTFT p50=40ms / p99=2.5s, TPOT≈25ms, e2e p99≈15s,
+#               到达率≈0.2~0.4 req/s, 无抢占, 同 prompt 前缀命中≈100%
+# 原则：阈值 ≈ 正常负载峰值 × 1.5~2；换硬件/模型/业务形态后请重新标定。
 # 条件中任一 metric 在数据里缺失时，该规则自动跳过（不会误报）。
-version: 1
+version: 2
 
 rules:
   - id: R1
@@ -12,33 +17,33 @@ rules:
     suggestion: 调小 max-model-len / 开启前缀缓存 / 降低并发 / 换 FP8·INT4 量化。
 
   - id: R2
-    name: 请求队列积压
+    name: 请求队列积压（接近实例容量）
     level: warning
     conditions:
-      - {metric: num_waiting, op: ge, value: 30}
-    suggestion: 队列持续积压会拉高 TTFT：调大 max_num_seqs、扩容副本，或考虑 PD 分离。
+      - {metric: num_waiting, op: ge, value: 8}
+    suggestion: 实测本机最大并发≈13(4096ctx)，排队≥8 已接近饱和：调大 max_num_seqs、扩容副本，或考虑 PD 分离。
 
   - id: R3
     name: 首 token 延迟(TTFT)偏高
     level: warning
     conditions:
-      - {metric: ttft_p50_ms, op: ge, value: 1000}
-    suggestion: TTFT>1s 体感明显：检查是否混入超长请求（队头阻塞）、是否开启前缀缓存、是否该上 PD 分离。
+      - {metric: ttft_p50_ms, op: ge, value: 500}
+    suggestion: 实测 p50=40ms；p50>500ms 属明显劣化：检查超长请求队头阻塞、前缀缓存是否生效、是否需 PD 分离。
 
   - id: R4
     name: 单 token 生成耗时(TPOT)偏慢
     level: warning
     conditions:
       - {metric: tpot_ms, op: ge, value: 80}
-    suggestion: TPOT 慢通常是算力受限：查 GPU 利用率，考虑更强卡/量化/蒸馏。
+    suggestion: 实测 TPOT≈25ms；>80ms 属算力受限：查 GPU 利用率，考虑更强卡/量化/蒸馏。
 
   - id: R5
-    name: KV cache 高位但无抢占
+    name: KV cache 占用偏高（容量规划信号）
     level: warning
     conditions:
-      - {metric: kv_cache_usage_pct, op: ge, value: 80}
+      - {metric: kv_cache_usage_pct, op: ge, value: 50}
       - {metric: preemptions_rate, op: le, value: 0.5}
-    suggestion: 显存长期高位将限制并发：建议扩容或提前做容量规划。
+    suggestion: 实测负载下 KV≈3%；>50% 意味接近容量上限：提前扩容或限制单请求上下文。
 
   - id: R6
     name: 前缀缓存命中率过低
@@ -67,29 +72,29 @@ rules:
     level: warning
     conditions:
       - {metric: preemptions_rate, op: ge, value: 1.0}
-    suggestion: 抢占浪费算力：降低并发、给 KV 更多配额、限制超长请求。
+    suggestion: 实测无抢占；一旦出现说明显存调度冲突：降低并发、给 KV 更多配额、限制超长请求。
 
   - id: R10
     name: 低峰空转（可能烧钱）
     level: info
     conditions:
-      - {metric: kv_cache_usage_pct, op: le, value: 15}
+      - {metric: kv_cache_usage_pct, op: le, value: 2}
       - {metric: num_running, op: le, value: 1}
-    suggestion: 夜间/低峰几乎闲置：考虑缩容、按需实例或换更小模型。
+    suggestion: 长时间闲置时考虑缩容/按需实例。注意：负载结束后的"尾巴窗口"内可能短暂误报(信息级)。
 
   - id: R11
-    name: 长尾延迟恶化(p99)
+    name: 长尾延迟显著恶化(p99)
     level: warning
     conditions:
-      - {metric: e2e_p99_ms, op: ge, value: 5000}
-    suggestion: p99 超 5s：给长请求限流/超时、设置队列优先级、长请求独立池。
+      - {metric: e2e_p99_ms, op: ge, value: 20000}
+    suggestion: 实测长输出负载 p99≈15s；>20s 属显著恶化：长请求限流/超时、队列优先级、长请求独立池。
 
   - id: R12
     name: 可评估 PD 分离(预填充-解码解耦)
     level: info
     conditions:
-      - {metric: ttft_p50_ms, op: ge, value: 1000}
-      - {metric: num_waiting, op: ge, value: 10}
+      - {metric: ttft_p50_ms, op: ge, value: 500}
+      - {metric: num_waiting, op: ge, value: 8}
     suggestion: 长 prompt + 排队明显时，PD 分离收益较大：先跑基线再评估。
 
   - id: R13
@@ -103,6 +108,6 @@ rules:
     name: 单实例过载，建议扩容
     level: warning
     conditions:
-      - {metric: num_waiting, op: ge, value: 20}
-      - {metric: requests_success_rate, op: ge, value: 20}
-    suggestion: 排队+高到达率说明单实例饱和：扩容或多副本+网关路由。
+      - {metric: num_waiting, op: ge, value: 8}
+      - {metric: requests_success_rate, op: ge, value: 0.3}
+    suggestion: 排队且到达率≥实测峰值(0.2~0.4 req/s)说明单实例饱和：扩容或多副本+网关路由，扩容后对比验证。

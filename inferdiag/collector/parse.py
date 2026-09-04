@@ -46,15 +46,15 @@ def _bare(name: str) -> str:
 
 
 def _pick(snapshot: dict[str, list[dict]], target: str) -> float | None:
-    """取与 target 裸名一致的最后一个样本值。"""
-    matched = [s for s in _all_samples(snapshot) if _bare(s["name"]) == target]
-    if not matched:
+    """取与 target 裸名一致的样本值之和。
+
+    计数器常按标签拆成多条序列（如 vllm:request_success_total 按
+    finished_reason 分 stop/length/abort）——此时应求和而非取单条。
+    """
+    values = [s["value"] for s in _all_samples(snapshot) if _bare(s["name"]) == target]
+    if not values:
         return None
-    # 优先取无标签样本
-    for s in reversed(matched):
-        if not s["labels"]:
-            return s["value"]
-    return matched[-1]["value"]
+    return round(sum(values), 6)
 
 
 def _quantile(snapshot: dict[str, list[dict]], target: str, q: str) -> float | None:
