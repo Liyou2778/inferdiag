@@ -14,7 +14,7 @@ from fastapi import FastAPI, Query, Request
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from ..cost import estimate_cost
+from ..cost import PRICING, estimate_cost
 from ..report import build_report
 from ..store import SQLiteStore
 
@@ -91,6 +91,10 @@ def create_app(
             "collecting": app.state.collect_url is not None,
             "findings": report["findings"],
             "metrics": {k: v for k, v in metrics.items() if v is not None},
+            "pricing": (
+                {"input_per_mtok": PRICING["input_per_mtok"], "output_per_mtok": PRICING["output_per_mtok"]}
+                if PRICING else None
+            ),
             "cost": report["cost"],
             "latest": latest[0].to_dict() if latest else None,
         }

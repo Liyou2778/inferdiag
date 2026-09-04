@@ -96,6 +96,9 @@ function updateFooter(o) {
   set("fCache", (m.prefix_cache_hit_pct == null ? "–" : fmt(m.prefix_cache_hit_pct) + "%"));
   set("fIn", fmtCompact(lat.prompt_tokens_total));
   set("fOut", fmtCompact(lat.generation_tokens_total));
+  const pr = o.pricing;
+  set("fPrice", pr ? `输入 ¥${pr.input_per_mtok} / 输出 ¥${pr.output_per_mtok} /M tok` : "未配置");
+  set("fCost", o.cost ? "¥" + fmt(o.cost.window_cost_rmb) : "–");
 }
 
 async function refreshOverview() {
