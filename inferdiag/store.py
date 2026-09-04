@@ -118,6 +118,23 @@ class SQLiteStore:
         if hits is not None and queries and queries > 0:
             out["prefix_cache_hit_pct"] = round(min(100.0, hits / queries * 100), 1)
         out["cost_per_mtok"] = None  # 由 cost 模块计算后填充
+        # 子窗口判定：区分"本就在空转"与"负载刚结束的回落后段"（消除 R10 尾巴误报）
+        # 前一半样本里若出现过活动（有运行请求/等待/KV 起量）=> 最近有过负载
+        mid = len(samples) // 2
+        first = samples[:max(1, mid)]
+        first_active = any(
+            (s.num_running or 0) > 0 or (s.num_waiting or 0) > 0 or (s.kv_cache_usage_pct or 0) > 0.5
+            for s in first
+        )
+        kv_max = out.get("kv_cache_usage_pct") or 0
+        running_max = out.get("num_running") or 0
+        idle_no_activity = (
+            (not first_active)
+            and not ((out.get("requests_success_rate") or 0) > 0)
+            and kv_max <= 2
+            and running_max <= 1
+        )
+        out["idle_no_activity"] = idle_no_activity
         return out
 
     def close(self) -> None:

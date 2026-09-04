@@ -80,7 +80,8 @@ rules:
     conditions:
       - {metric: kv_cache_usage_pct, op: le, value: 2}
       - {metric: num_running, op: le, value: 1}
-    suggestion: 长时间闲置时考虑缩容/按需实例。注意：负载结束后的"尾巴窗口"内可能短暂误报(信息级)。
+      - {metric: idle_no_activity, op: eq, value: true}
+    suggestion: 整个窗口都在空转且无近期负载：考虑缩容/按需实例。（负载刚结束的回落后段不再触发）
 
   - id: R11
     name: 长尾延迟显著恶化(p99)

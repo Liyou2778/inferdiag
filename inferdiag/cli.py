@@ -137,5 +137,58 @@ def serve(
     uvicorn.run(web_app, host=host, port=port, log_level="info")
 
 
+@app.command()
+def export(
+    db: str = typer.Option("data/inferdiag.db", "--db"),
+    window: float = typer.Option(120.0, "--window", help="统计时间窗(秒)"),
+    fmt: str = typer.Option("json", "--format", "-f", help="json | md"),
+    out: str = typer.Option("report", "--out", "-o", help="输出路径（自动补扩展名）"),
+) -> None:
+    """把体检报告导出为文件（JSON / Markdown）。"""
+    import json
+    from pathlib import Path
+
+    from .cost import estimate_cost
+    from .report import build_report
+
+    store = SQLiteStore(db)
+    try:
+        metrics = store.window_metrics(window)
+        report = build_report(metrics, window, estimate_cost(metrics))
+        path = Path(out)
+        if path.suffix not in (".json", ".md"):
+            path = path.with_suffix("." + fmt)
+
+        if fmt == "md":
+            lines = [
+                "# inferdiag 体检报告",
+                "",
+                f"- 健康分：**{report['score']}/100**",
+                f"- 样本数：{report['sample_count']}（窗口 {window}s）",
+                "",
+                "## 诊断建议",
+                "",
+            ]
+            if report["findings"]:
+                for f in report["findings"]:
+                    ev = "，".join(f"{k}={v}" for k, v in f["evidence"].items())
+                    lines.append(f"- [{f['level']}] **{f['rule_id']} {f['name']}**（{ev}）")
+                    lines.append(f"  - {f['suggestion']}")
+            else:
+                lines.append("未发现明显问题 ✓")
+            lines += ["", "## 关键指标", ""]
+            for k, v in sorted(metrics.items()):
+                if v is not None:
+                    lines.append(f"- `{k}` = {v}")
+            content = "\n".join(lines)
+        else:
+            content = json.dumps(report, ensure_ascii=False, indent=2)
+
+        path.write_text(content, encoding="utf-8")
+        print(f"已导出: {path}")
+    finally:
+        store.close()
+
+
 if __name__ == "__main__":
     app()
