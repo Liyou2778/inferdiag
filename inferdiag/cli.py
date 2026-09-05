@@ -16,7 +16,7 @@ from .store import SQLiteStore
 
 try:  # Windows 控制台中文输出
     sys.stdout.reconfigure(encoding="utf-8")  # type: ignore[union-attr]
-except Exception:  # noqa: BLE001
+except Exception:  # noqa: BLE001, S110 编码不可用时保持默认
     pass
 
 app = typer.Typer(add_completion=False, help="LLM 推理体检报告生成器")
