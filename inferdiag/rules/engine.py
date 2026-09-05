@@ -22,8 +22,10 @@ _OPS = {
 }
 
 
-def load_rules() -> list[dict]:
-    with RULES_FILE.open(encoding="utf-8") as f:
+def load_rules(path: str | Path | None = None) -> list[dict]:
+    """加载规则；path 为空时用内置 rules_v0.yaml。"""
+    target = Path(path) if path else RULES_FILE
+    with target.open(encoding="utf-8") as f:
         data = yaml.safe_load(f)
     return list(data["rules"])
 

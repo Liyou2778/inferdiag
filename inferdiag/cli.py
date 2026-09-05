@@ -31,12 +31,18 @@ def collect(
     interval: float = typer.Option(10.0, "--interval", help="采集间隔(秒)"),
     seconds: float = typer.Option(30.0, "--seconds", help="累计采集时长(秒)，<=0 为无限"),
     engine: str = typer.Option("auto", "--engine", help="auto|vllm|sglang"),
+    retention_hours: float = typer.Option(0.0, "--retention-hours", help="采集结束后保留最近 N 小时数据，0=不清理"),
 ) -> None:
     """定时抓取 /metrics 并写入 SQLite。"""
+    import time
+
     store = SQLiteStore(db)
     try:
         print(f"collecting from {url} -> {db} (interval={interval}s, seconds={seconds})")
         n = collect_loop(url, store, interval=interval, seconds=seconds, engine=engine)
+        if retention_hours > 0:
+            removed = store.purge_before(time.time() - retention_hours * 3600)
+            print(f"retention: 清理 {removed} 条早于 {retention_hours}h 的样本")
         print(f"done: {n} samples stored, total rows={store.count()}")
     finally:
         store.close()
@@ -58,13 +64,14 @@ def _render_findings(findings: list[dict]) -> str:
 def check(
     db: str = typer.Option("data/inferdiag.db", "--db"),
     window: float = typer.Option(120.0, "--window", help="统计时间窗(秒)"),
+    rules: str = typer.Option(None, "--rules", help="自定义规则 YAML 路径（默认内置）"),
 ) -> None:
     """对最近数据运行诊断规则，输出体检报告。"""
     store = SQLiteStore(db)
     try:
         metrics = store.window_metrics(window)
         cost_info = estimate_cost(metrics)
-        report = build_report(metrics, window, cost_info)
+        report = build_report(metrics, window, cost_info, rules_path=rules)
         print("=" * 60)
         print(f"inferdiag 体检报告  |  健康分: {report['score']}/100")
         print(f"窗口: {window}s  样本数: {report['sample_count']}")
@@ -82,13 +89,14 @@ def check(
 def report(
     db: str = typer.Option("data/inferdiag.db", "--db"),
     window: float = typer.Option(120.0, "--window", help="统计时间窗(秒)"),
+    rules: str = typer.Option(None, "--rules", help="自定义规则 YAML 路径（默认内置）"),
 ) -> None:
     """详细版体检报告（含指标快照与注意事项）。"""
     store = SQLiteStore(db)
     try:
         metrics = store.window_metrics(window)
         cost_info = estimate_cost(metrics)
-        r = build_report(metrics, window, cost_info)
+        r = build_report(metrics, window, cost_info, rules_path=rules)
         print("=" * 60)
         print("inferdiag 体检报告（详细版）")
         print("=" * 60)
@@ -143,6 +151,7 @@ def export(
     window: float = typer.Option(120.0, "--window", help="统计时间窗(秒)"),
     fmt: str = typer.Option("json", "--format", "-f", help="json | md"),
     out: str = typer.Option("report", "--out", "-o", help="输出路径（自动补扩展名）"),
+    rules: str = typer.Option(None, "--rules", help="自定义规则 YAML 路径（默认内置）"),
 ) -> None:
     """把体检报告导出为文件（JSON / Markdown）。"""
     import json
@@ -154,7 +163,7 @@ def export(
     store = SQLiteStore(db)
     try:
         metrics = store.window_metrics(window)
-        report = build_report(metrics, window, estimate_cost(metrics))
+        report = build_report(metrics, window, estimate_cost(metrics), rules_path=rules)
         path = Path(out)
         if path.suffix not in (".json", ".md"):
             path = path.with_suffix("." + fmt)

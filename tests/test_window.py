@@ -4,6 +4,8 @@ import tempfile
 import time
 from pathlib import Path
 
+import pytest
+
 from inferdiag.collector.models import Sample
 from inferdiag.rules.engine import evaluate
 from inferdiag.store import SQLiteStore
@@ -62,3 +64,15 @@ def test_engine_r10_requires_flag_metric():
     assert "R10" in _ids(m2)
     m3 = {"kv_cache_usage_pct": 0.0, "num_running": 0.0, "idle_no_activity": False}
     assert "R10" not in _ids(m3)
+
+
+def test_purge_before_removes_old_samples():
+    now = time.time()
+    store = _store_with([_sample(now - 100, 1, 1), _sample(now - 50, 1, 1), _sample(now - 10, 1, 1)])
+    try:
+        removed = store.purge_before(now - 30)
+        assert removed == 2
+        assert len(store.latest(10)) == 1
+        assert store.latest(1)[0].ts == pytest.approx(now - 10, abs=2)
+    finally:
+        store.close()

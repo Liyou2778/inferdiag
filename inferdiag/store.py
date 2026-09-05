@@ -1,4 +1,4 @@
-"""SQLite 时序存储（v0 极简实现，schema 演进见架构文档）。
+"""SQLite 时序存储。
 
 表 samples(ts REAL, engine TEXT, payload TEXT)：payload 为 Sample 的 JSON。
 window_metrics() 把最近一个时间窗聚合成规则引擎需要的指标字典。
@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import threading
 import time
 from pathlib import Path
 
@@ -19,12 +20,13 @@ class SQLiteStore:
         self.db_path = Path(db_path)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         # check_same_thread=False：FastAPI/uvicorn 在工作线程执行请求，
-        # 而连接在主线程创建——单进程读写由调用方保证时序即可。
+        # 而连接在主线程创建。读写通过 self._lock 串行化。
         self._conn = sqlite3.connect(str(self.db_path), check_same_thread=False, timeout=15)
+        self._lock = threading.RLock()
         self._init()
 
     def _init(self) -> None:
-        self._conn.execute("PRAGMA journal_mode=WAL")  # 多线程/多连接读写更稳
+        self._conn.execute("PRAGMA journal_mode=WAL")
         self._conn.execute("PRAGMA busy_timeout=8000")
         self._conn.execute(
             """
@@ -39,29 +41,41 @@ class SQLiteStore:
         self._conn.commit()
 
     def insert_sample(self, sample: Sample) -> None:
-        self._conn.execute(
-            "INSERT INTO samples (ts, engine, payload) VALUES (?, ?, ?)",
-            (sample.ts, sample.engine, json.dumps(sample.to_dict())),
-        )
-        self._conn.commit()
+        with self._lock:
+            self._conn.execute(
+                "INSERT INTO samples (ts, engine, payload) VALUES (?, ?, ?)",
+                (sample.ts, sample.engine, json.dumps(sample.to_dict())),
+            )
+            self._conn.commit()
 
     def count(self) -> int:
-        row = self._conn.execute("SELECT COUNT(*) FROM samples").fetchone()
-        return int(row[0]) if row else 0
+        """样本行数（O(1)，用最大 rowid 近似；执行过 purge 后为近似值）。"""
+        with self._lock:
+            row = self._conn.execute("SELECT COALESCE(MAX(rowid), 0) FROM samples").fetchone()
+            return int(row[0]) if row else 0
 
     def latest(self, n: int = 10) -> list[Sample]:
-        rows = self._conn.execute(
-            "SELECT payload FROM samples ORDER BY ts DESC LIMIT ?", (n,)
-        ).fetchall()
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT payload FROM samples ORDER BY ts DESC LIMIT ?", (n,)
+            ).fetchall()
         return [Sample(**json.loads(r[0])) for r in rows]
 
     def window_samples(self, seconds: float = 60.0) -> list[Sample]:
         """返回最近 seconds 秒内、按时间正序的样本。"""
-        cutoff = time.time() - seconds
-        rows = self._conn.execute(
-            "SELECT payload FROM samples WHERE ts >= ? ORDER BY ts ASC", (cutoff,)
-        ).fetchall()
+        with self._lock:
+            cutoff = time.time() - seconds
+            rows = self._conn.execute(
+                "SELECT payload FROM samples WHERE ts >= ? ORDER BY ts ASC", (cutoff,)
+            ).fetchall()
         return [Sample(**json.loads(r[0])) for r in rows]
+
+    def purge_before(self, cutoff_ts: float) -> int:
+        """删除早于 cutoff_ts 的样本，返回删除行数。"""
+        with self._lock:
+            cur = self._conn.execute("DELETE FROM samples WHERE ts < ?", (cutoff_ts,))
+            self._conn.commit()
+            return cur.rowcount
 
     def window_metrics(self, seconds: float = 60.0) -> dict:
         """把时间窗样本聚合成规则引擎指标字典。
@@ -73,9 +87,10 @@ class SQLiteStore:
         samples = self.window_samples(seconds)
         fallback = len(samples) < 2
         if fallback:
-            rows = self._conn.execute(
-                "SELECT payload FROM samples ORDER BY ts DESC LIMIT 30"
-            ).fetchall()
+            with self._lock:
+                rows = self._conn.execute(
+                    "SELECT payload FROM samples ORDER BY ts DESC LIMIT 30"
+                ).fetchall()
             samples = [Sample(**json.loads(r[0])) for r in reversed(rows)]
         out: dict = {"sample_count": len(samples), "used_fallback_window": fallback}
         if len(samples) < 2:
@@ -117,13 +132,31 @@ class SQLiteStore:
         queries = rate_of("prefix_cache_queries_total")
         if hits is not None and queries and queries > 0:
             out["prefix_cache_hit_pct"] = round(min(100.0, hits / queries * 100), 1)
-        out["cost_per_mtok"] = None  # 由 cost 模块计算后填充
+        # 每百万 token 混合成本（用于 R8），由单价表计算
+        out["cost_per_mtok"] = None
+        try:
+            from .cost import PRICING
+
+            if PRICING:
+                in_r = out.get("prompt_tokens_rate") or 0.0
+                out_r = out.get("generation_tokens_rate") or 0.0
+                win = out.get("window_seconds") or 0.0
+                total_tok = (in_r + out_r) * win
+                cost = (
+                    in_r * win / 1e6 * PRICING["input_per_mtok"]
+                    + out_r * win / 1e6 * PRICING["output_per_mtok"]
+                )
+                if total_tok > 0:
+                    out["cost_per_mtok"] = round(cost / total_tok * 1e6, 4)
+        except Exception:  # noqa: BLE001, S110 单价缺失/异常不阻塞诊断
+            pass
         # 子窗口判定：区分"本就在空转"与"负载刚结束的回落后段"（消除 R10 尾巴误报）
-        # 前一半样本里若出现过活动（有运行请求/等待/KV 起量）=> 最近有过负载
         mid = len(samples) // 2
-        first = samples[:max(1, mid)]
+        first = samples[: max(1, mid)]
         first_active = any(
-            (s.num_running or 0) > 0 or (s.num_waiting or 0) > 0 or (s.kv_cache_usage_pct or 0) > 0.5
+            (s.num_running or 0) > 0
+            or (s.num_waiting or 0) > 0
+            or (s.kv_cache_usage_pct or 0) > 0.5
             for s in first
         )
         kv_max = out.get("kv_cache_usage_pct") or 0
@@ -138,4 +171,5 @@ class SQLiteStore:
         return out
 
     def close(self) -> None:
-        self._conn.close()
+        with self._lock:
+            self._conn.close()

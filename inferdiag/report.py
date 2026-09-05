@@ -5,7 +5,7 @@ from __future__ import annotations
 import time
 from typing import Any
 
-from .rules.engine import evaluate
+from .rules.engine import evaluate, load_rules
 
 
 def health_score(findings: list[dict]) -> int:
@@ -19,8 +19,10 @@ def build_report(
     metrics: dict[str, Any],
     window_seconds: float,
     cost_info: dict[str, Any] | None = None,
+    rules_path: str | None = None,
 ) -> dict:
-    findings = evaluate(metrics)
+    rules = load_rules(rules_path) if rules_path else None
+    findings = evaluate(metrics, rules)
     score = health_score(findings)
     return {
         "generated_at": time.time(),

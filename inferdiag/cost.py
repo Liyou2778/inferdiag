@@ -1,18 +1,28 @@
-"""成本估算（v0 极简版）。
+"""成本估算。
 
-单价表未配置时返回 None，规则 R8 自动跳过；配置方式：后续引入 config 文件/CLI 参数。
+单价（每百万 token，人民币）默认示例值，可通过环境变量覆盖：
+    INFERDIAG_PRICE_IN / INFERDIAG_PRICE_OUT
 """
 
 from __future__ import annotations
 
+import os
 from typing import Any
 
-# 单价（每百万 token，人民币）：开箱即用的示例值，接入真实部署时按实际账单修改
-PRICING: dict[str, float] | None = {"input_per_mtok": 1.0, "output_per_mtok": 3.0}
+
+def _pricing_from_env() -> dict[str, float]:
+    in_price = os.environ.get("INFERDIAG_PRICE_IN")
+    out_price = os.environ.get("INFERDIAG_PRICE_OUT")
+    if in_price is not None and out_price is not None:
+        return {"input_per_mtok": float(in_price), "output_per_mtok": float(out_price)}
+    return {"input_per_mtok": 1.0, "output_per_mtok": 3.0}
+
+
+PRICING: dict[str, float] = _pricing_from_env()
 
 
 def estimate_cost(metrics: dict[str, Any]) -> dict[str, Any] | None:
-    """按窗口内 token 增量估算成本。无单价表或无 token 数据时返回 None。"""
+    """按窗口内 token 增量估算成本。无 token 数据时返回 None。"""
     if PRICING is None:
         return None
     prompt_rate = metrics.get("prompt_tokens_rate") or 0.0
@@ -28,5 +38,5 @@ def estimate_cost(metrics: dict[str, Any]) -> dict[str, Any] | None:
         "window_tokens_in": round(prompt_toks),
         "window_tokens_out": round(gen_toks),
         "window_cost_rmb": round(cost, 4),
-        "note": "单价为示例配置，请按实际账单修改 PRICING。",
+        "note": "单价来自 cost.PRICING（默认示例值，可用环境变量覆盖）。",
     }

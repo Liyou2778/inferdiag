@@ -11,7 +11,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from fastapi import FastAPI, Query, Request
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from ..cost import PRICING, estimate_cost
@@ -71,8 +71,12 @@ def create_app(
         threading.Thread(target=_collector_loop, name="inferdiag-collector", daemon=True).start()
 
     @app.get("/", include_in_schema=False)
-    def index() -> FileResponse:
-        return FileResponse(STATIC_DIR / "index.html")
+    def index() -> HTMLResponse:
+        # 用 app.js 的 mtime 做 cache-bust，前端更新后无需手动改版本号
+        js = STATIC_DIR / "app.js"
+        html = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
+        html = html.replace("app.js?v=AUTO", f"app.js?v={int(js.stat().st_mtime)}")
+        return HTMLResponse(html)
 
     @app.get("/api/overview")
     def overview(window: float = Query(120.0, ge=1)):

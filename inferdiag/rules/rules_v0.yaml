@@ -61,11 +61,11 @@ rules:
     suggestion: batch 没吃饱：调大 max_num_seqs / max_num_batched_tokens。
 
   - id: R8
-    name: 每 token 成本异常（需配置单价表后生效）
+    name: 每 token 成本异常
     level: warning
     conditions:
-      - {metric: cost_per_mtok, op: ge, value: 999999}
-    suggestion: 请先配置单价表(cost 模块)后再启用本规则。
+      - {metric: cost_per_mtok, op: ge, value: 10}
+    suggestion: 混合单价超 ¥10/M token：检查单价表(INFERDIAG_PRICE_IN/OUT)或吞吐是否异常偏低。
 
   - id: R9
     name: 抢占频繁（调度冲突）
