@@ -31,6 +31,6 @@ def build_report(
         "findings": findings,
         "cost": cost_info,
         "notes": [
-            "阈值为 v0 初始值：请先跑一轮正常负载基线后校准（阈值≈基线×1.5~2）。",
+            "阈值为 RTX 4060 + Qwen2.5-3B-AWQ 的基线标定值；更换硬件/模型/业务形态后请重新校准（见 docs/calibration.md）。",
         ],
     }

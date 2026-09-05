@@ -1,6 +1,6 @@
 """inferdiag CLI。
 
-已实现：collect / check / report（serve 在 P4 提供）。
+已实现：collect / check / report / export / serve。
 """
 
 from __future__ import annotations

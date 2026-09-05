@@ -1,7 +1,7 @@
 """规则引擎测试。"""
 
-from inferdiag.rules.engine import evaluate, load_rules
 from inferdiag.report import build_report, health_score
+from inferdiag.rules.engine import evaluate, load_rules
 
 
 def _stress_metrics():

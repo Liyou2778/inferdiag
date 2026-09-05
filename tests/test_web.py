@@ -12,17 +12,17 @@ from inferdiag.web.app import create_app
 
 
 def _make_sample(**kw) -> Sample:
-    base = dict(
-        ts=time.time(),
-        engine="vllm",
-        num_running=3.0,
-        num_waiting=0.0,
-        kv_cache_usage_pct=2.8,
-        ttft_p50_ms=40.0,
-        ttft_p99_ms=2500.0,
-        e2e_p99_ms=15000.0,
-        generation_tokens_total=1000.0,
-    )
+    base = {
+        "ts": time.time(),
+        "engine": "vllm",
+        "num_running": 3.0,
+        "num_waiting": 0.0,
+        "kv_cache_usage_pct": 2.8,
+        "ttft_p50_ms": 40.0,
+        "ttft_p99_ms": 2500.0,
+        "e2e_p99_ms": 15000.0,
+        "generation_tokens_total": 1000.0,
+    }
     base.update(kw)
     return Sample(**base)
 

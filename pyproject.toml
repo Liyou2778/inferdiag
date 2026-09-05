@@ -4,6 +4,19 @@ version = "0.2.0"
 description = "LLM 推理体检报告生成器：诊断 vLLM/SGLang 为什么慢、为什么贵、怎么改"
 readme = "README.md"
 requires-python = ">=3.10"
+license = "Apache-2.0"
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: System Administrators",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: System :: Monitoring",
+    "Topic :: Software Development :: Libraries",
+]
 dependencies = [
     "httpx>=0.27",
     "prometheus-client>=0.20",

@@ -94,7 +94,7 @@ def build_metrics(mode: str = "normal") -> str:
 class Handler(BaseHTTPRequestHandler):
     mode = "normal"
 
-    def do_GET(self):  # noqa: N802
+    def do_GET(self):
         if self.path != "/metrics":
             self.send_response(404)
             self.end_headers()

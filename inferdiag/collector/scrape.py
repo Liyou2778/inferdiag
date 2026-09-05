@@ -6,8 +6,8 @@ import time
 
 import httpx
 
-from .parse import normalize, parse_prometheus_text
 from .models import Sample
+from .parse import normalize, parse_prometheus_text
 
 
 def scrape_once(url: str, timeout: float = 10.0) -> str:
